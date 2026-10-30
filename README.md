@@ -1,4 +1,4 @@
-# Keyboard Plate Generator v0.1.0-beta.1
+# Keyboard Plate Generator v0.1.0-beta.2
 
 **By [Aniket Kharel](https://github.com/aniketkharel/) · eco-ergo.com · MIT License**
 
@@ -45,7 +45,7 @@ Run `plate_generator.FCMacro` from FreeCAD's Macros dialog. When upgrading, repl
 
 1. Create or open your layout in [Keyboard Layout Editor](https://www.keyboard-layout-editor.com/#/) and use **Download JSON**. Click **Import KLE JSON…** and choose your layout, or `examples/four_switch_kle.json` or `examples/tough_test.json`.
 2. Check the top-view preview, switch count and overall X × Y × thickness.
-3. Adjust parameters and click **Generate plate**. Dimensions and preview update before generation.
+3. Choose **Outline shape**: **Follow layout** keeps the stepped outline; **Rectangle** encloses the expanded layout in a solid X/Y-aligned rectangular plate. Switch positions and cutouts stay unchanged. Adjust parameters and click **Generate plate**. Dimensions and preview update before generation.
 4. Edit Data properties and recompute, or select an existing generator before running the macro to edit it in the dialog.
 5. Save the document as FCStd. Select the plate and use FreeCAD's Export command for STL or STEP.
 
@@ -85,7 +85,7 @@ The proven handwired defaults remain unchanged. PCB assembly fit has not been ph
 
 Accepts full [KLE](https://www.keyboard-layout-editor.com/#/) JSON arrays and comma-separated JSON rows without the outer array. Supports stagger, key sizes, rotation clusters and decals. JavaScript syntax with unquoted property names and QMK/VIA firmware JSON are not supported.
 
-Blue preview regions represent expanded key envelopes; dark regions represent switch openings. Overall dimensions include rotated envelopes. The preview is a position and size check; generation separately validates connectivity and BREP geometry.
+Blue preview regions represent the chosen plate outline; dark regions represent switch openings. Overall dimensions include rotated envelopes. The preview is a position and size check; generation separately validates connectivity and BREP geometry.
 
 ## Errors and limits
 
@@ -95,7 +95,7 @@ The generator requires one connected plate with positive volume and valid BREP. 
 
 **Stabilizer cutouts are not implemented yet.** Wider keys currently receive only a centered switch opening; importing a spacebar, Enter, Shift or other wide key does not add stabilizer holes. Stabilizer support may be added in a future release, but no release date or supported stabilizer types are committed.
 
-One centered switch opening is created per physical key. The outline is a union of expanded rectangular key footprints. Stabilizer cutouts, secondary nonrectangular KLE footprints, mounting holes, OLED/controller mounts and case generation are not implemented. This release is a modular macro application, not a registered workbench.
+One centered switch opening is created per physical key. The default outline is a union of expanded rectangular key footprints. Rectangle mode uses the X/Y-aligned bounding rectangle of those same expanded footprints, including the outline margin and rotated keys. Stabilizer cutouts, secondary nonrectangular KLE footprints, mounting holes, OLED/controller mounts and case generation are not implemented. This release is a modular macro application, not a registered workbench.
 
 ## Compatibility and validation
 

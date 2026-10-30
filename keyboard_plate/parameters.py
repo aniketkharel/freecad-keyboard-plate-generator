@@ -19,3 +19,5 @@ LENGTH_PARAMETERS = (
     ('ClipReliefSpan', 'Relief span (mm)', '03 Cherry MX', 9.0,
      'Relief strip width across each clip side'),
 )
+
+OUTLINE_SHAPES = ('Follow layout', 'Rectangle')

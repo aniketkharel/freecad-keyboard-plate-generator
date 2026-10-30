@@ -21,10 +21,15 @@ def rectangle(key, width=None, height=None, margin=0.0):
     return points
 
 
-def layout_preview(keys, margin, opening):
+def layout_preview(keys, margin, opening, outline_shape='Follow layout'):
     envelopes = [rectangle(key, margin=margin) for key in keys]
     holes = [rectangle(key, opening, opening) for key in keys]
     points = [point for polygon in envelopes for point in polygon]
     bounds = (min(p[0] for p in points), min(p[1] for p in points),
               max(p[0] for p in points), max(p[1] for p in points))
+    if outline_shape == 'Rectangle':
+        left, top, right, bottom = bounds
+        envelopes = [[(left, top), (right, top), (right, bottom), (left, bottom)]]
+    elif outline_shape != 'Follow layout':
+        raise ValueError('Unknown outline shape: %s' % outline_shape)
     return envelopes, holes, bounds

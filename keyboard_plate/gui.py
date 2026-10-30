@@ -14,7 +14,7 @@ except ImportError:
         from PySide import QtCore, QtGui
 from . import __author__, __version__
 from .feature import KeyboardPlateProxy, create_plate
-from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF
+from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES
 from .kle import parse_kle
 from .preview import layout_preview
 
@@ -73,6 +73,12 @@ class PlateDialog(QtWidgets.QDialog):
         form.addRow(self.dimensions)
         legend = QtWidgets.QLabel('Top view · blue: plate envelopes · dark: switch openings')
         form.addRow(legend)
+        self.outline = QtWidgets.QComboBox()
+        self.outline.addItems(list(OUTLINE_SHAPES))
+        current_outline = str(getattr(self.target, 'OutlineShape', OUTLINE_SHAPES[0]))
+        self.outline.setCurrentIndex(max(0, self.outline.findText(current_outline)))
+        self.outline.setToolTip('Rectangle encloses the expanded layout in an X/Y-aligned boundary.')
+        form.addRow('Outline shape', self.outline)
         self.fields = {}
         for name, label, group, default, description in LENGTH_PARAMETERS:
             field = QtWidgets.QDoubleSpinBox()
@@ -84,6 +90,7 @@ class PlateDialog(QtWidgets.QDialog):
             form.addRow(label, field)
         for name in ('OutlineMargin', 'SwitchOpening', 'PlateThickness'):
             self.fields[name].valueChanged.connect(self.update_preview)
+        self.outline.currentIndexChanged.connect(self.update_preview)
         self.update_preview()
         self.relief = QtWidgets.QCheckBox('Enable underside clip relief')
         self.relief.setToolTip(
@@ -104,7 +111,7 @@ class PlateDialog(QtWidgets.QDialog):
             keys = parse_kle(self.data)
             envelopes, holes, bounds = layout_preview(
                 keys, self.fields['OutlineMargin'].value(),
-                self.fields['SwitchOpening'].value())
+                self.fields['SwitchOpening'].value(), self.outline.currentText())
             # Filled polygons overlap to show the same envelope union as generation.
             for polygons, color in ((envelopes, '#a9c7dc'), (holes, '#23313e')):
                 for points in polygons:
@@ -150,12 +157,13 @@ class PlateDialog(QtWidgets.QDialog):
             doc.openTransaction('Generate keyboard plate')
             transaction = True
             obj = self.target or create_plate(doc, self.data)
+            # Attach the proxy first to migrate older features inside the transaction.
+            KeyboardPlateProxy(obj)
+            obj.OutlineShape = self.outline.currentText()
             obj.KLEData = self.data
             for name, field in self.fields.items():
                 setattr(obj, name, field.value())
             obj.UndersideClipRelief = self.relief.isChecked()
-            # Also upgrades objects created by the original single-file macro.
-            KeyboardPlateProxy(obj)
             obj.touch()
             doc.recompute()
             if not obj.GenerationStatus.startswith('OK'):

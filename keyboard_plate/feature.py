@@ -5,12 +5,13 @@ import traceback
 import FreeCAD as App
 from .geometry import _generate
 from .kle import parse_kle
-from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF
+from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES
 
 
 class KeyboardPlateProxy:
     def __init__(self, obj):
         obj.Proxy = self
+        ensure_outline_property(obj)
 
     def execute(self, obj):
         try:
@@ -22,6 +23,16 @@ class KeyboardPlateProxy:
 
     def onDocumentRestored(self, obj):
         obj.Proxy = self
+        ensure_outline_property(obj)
+
+
+def ensure_outline_property(obj):
+    """Upgrade older saved features without altering their existing outline."""
+    if 'OutlineShape' not in obj.PropertiesList:
+        obj.addProperty('App::PropertyEnumeration', 'OutlineShape', '02 Plate',
+                        'Follow key envelopes or enclose them in an X/Y-aligned rectangle')
+        obj.OutlineShape = list(OUTLINE_SHAPES)
+        obj.OutlineShape = OUTLINE_SHAPES[0]
 
 
 def _add_props(obj, data):

@@ -4,7 +4,7 @@ from keyboard_plate.kle import parse_kle
 
 class ParserTests(unittest.TestCase):
     def test_reference_four_switches(self):
-        with open('4x4_kle.json', encoding='utf-8') as stream:
+        with open('examples/four_switch_kle.json', encoding='utf-8') as stream:
             keys = parse_kle(stream.read())
         self.assertEqual([(k[0], k[1]) for k in keys], [(0, 0), (1, 0), (0, 1), (1, 1)])
 

@@ -81,9 +81,20 @@ def _generate(obj):
 
     # Envelopes are identical to the successful four-switch print.
     faces = [_key_polygon(key, margin) for key in keys]
-    envelope = faces[0].multiFuse(faces[1:]) if len(faces) > 1 else faces[0]
-    envelope = _refine(envelope)
-    base = envelope.extrude(Vector(0, 0, t))
+    outline = str(getattr(obj, 'OutlineShape', 'Follow layout'))
+    if outline == 'Rectangle':
+        # Use the same expanded envelopes as the default outline, including rotation.
+        left = min(face.BoundBox.XMin for face in faces)
+        bottom = min(face.BoundBox.YMin for face in faces)
+        right = max(face.BoundBox.XMax for face in faces)
+        top = max(face.BoundBox.YMax for face in faces)
+        base = Part.makeBox(right - left, top - bottom, t, Vector(left, bottom, 0))
+    elif outline == 'Follow layout':
+        envelope = faces[0].multiFuse(faces[1:]) if len(faces) > 1 else faces[0]
+        envelope = _refine(envelope)
+        base = envelope.extrude(Vector(0, 0, t))
+    else:
+        raise ValueError('Unknown outline shape: %s' % outline)
 
     cutters = []
     for key in keys:

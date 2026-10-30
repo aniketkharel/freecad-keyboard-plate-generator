@@ -24,3 +24,12 @@ class PreviewTests(unittest.TestCase):
         _, _, a = layout_preview(keys, 5, 14)
         _, _, b = layout_preview(keys, 6, 14)
         self.assertAlmostEqual((b[2] - b[0]) - (a[2] - a[0]), 2)
+
+    def test_rectangle_encloses_stagger_without_moving_holes(self):
+        keys = parse_kle('[["A",{"y":0.4},"B"],["C","D"]]')
+        follow, holes, bounds = layout_preview(keys, 5, 14)
+        rectangular, same_holes, same_bounds = layout_preview(keys, 5, 14, 'Rectangle')
+        self.assertEqual(len(rectangular), 1)
+        self.assertEqual(holes, same_holes)
+        self.assertEqual(bounds, same_bounds)
+        self.assertEqual(rectangular[0][0], bounds[:2])

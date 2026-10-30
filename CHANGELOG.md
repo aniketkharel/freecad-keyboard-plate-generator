@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-beta.2 — 2026-10-30
+
+- Added Outline shape: Follow layout (default) or Rectangle, in the dialog and Data properties.
+- Rectangle encloses expanded key footprints along X/Y without changing switch or relief cutters.
+- Preview follows the selected outline; older documents retain their original layout-following mode.
+- Verified staggered, rotated and separated layouts, rectangle volume, saved selection and older-object migration in FreeCAD 1.1.
+
+
 ## 0.1.0-beta.1 — 2026-10-30
 
 First public early-beta release. Earlier v0.1/v0.2 macro labels and the internal v0.3.0 refactor label belong to development history; public release numbering starts here.
