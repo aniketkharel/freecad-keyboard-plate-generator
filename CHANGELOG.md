@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.3 — 2026-10-31
+
+- Added Placement reference: Keep layout coordinates, Center on origin, or Corner at origin.
+- Alignment uses outer bounds and a local bottom face at Z=0; manual object Placement remains independent.
+- Preview shows the aligned plate and a red origin marker.
+- Older documents retain their original coordinates by default.
+- Verified rigid geometry equivalence, both outlines, all modes, preview bounds, dimension edits, save/reopen and property migration in FreeCAD 1.1.
+
+
 ## 0.1.0-beta.2 — 2026-10-30
 
 - Added Outline shape: Follow layout (default) or Rectangle, in the dialog and Data properties.

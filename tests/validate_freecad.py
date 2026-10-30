@@ -92,3 +92,55 @@ for layout in ('[["A",{"y":0.4},"B"],["C","D"]]',
     assert str(obj.OutlineShape) == 'Follow layout'
     App.closeDocument(doc.Name)
 print('FreeCAD validation passed, including rectangle, unchanged cutouts, persistence and migration')
+
+# Alignment must be a rigid translation and remain independent of manual Placement.
+from keyboard_plate.alignment import alignment_offset
+from keyboard_plate.parameters import PLACEMENT_REFERENCES
+for outline in ('Follow layout', 'Rectangle'):
+    doc = App.newDocument('AlignmentValidation')
+    layout = '[[{"r":25,"rx":3,"ry":2},"A","B"],["C","D"]]'
+    obj = create_plate(doc, layout)
+    obj.OutlineShape = outline
+    doc.recompute()
+    assert obj.GenerationStatus.startswith('OK'), obj.GenerationStatus
+    original = obj.Shape.copy()
+    b = original.BoundBox
+    for mode in PLACEMENT_REFERENCES:
+        obj.PlacementReference = mode
+        doc.recompute()
+        assert obj.GenerationStatus.startswith('OK'), obj.GenerationStatus
+        dx, dy = alignment_offset((b.XMin, b.YMin, b.XMax, b.YMax), mode)
+        expected = original.copy()
+        expected.translate(App.Vector(dx, dy, 0))
+        assert expected.cut(obj.Shape).Volume < 1e-6
+        assert obj.Shape.cut(expected).Volume < 1e-6
+        box = obj.Shape.BoundBox
+        _, _, bounds = layout_preview(parse_kle(layout), 5, 14, outline, mode)
+        for actual, target in zip((box.XMin, -box.YMax, box.XMax, -box.YMin), bounds):
+            assert abs(actual - target) < 1e-6
+        assert abs(box.ZMin) < 1e-6
+        if mode == 'Center on origin':
+            assert abs(box.XMin + box.XMax) < 1e-6
+            assert abs(box.YMin + box.YMax) < 1e-6
+        if mode == 'Corner at origin':
+            assert abs(box.XMin) < 1e-6 and abs(box.YMin) < 1e-6
+    filename = str((Path('validation_output') / 'aligned.FCStd').resolve())
+    doc.saveAs(filename)
+    App.closeDocument(doc.Name)
+    doc = App.openDocument(filename)
+    obj = doc.getObject('KeyboardPlate')
+    assert str(obj.PlacementReference) == 'Corner at origin'
+    obj.OutlineMargin = 6
+    doc.recompute()
+    assert abs(obj.Shape.BoundBox.XMin) < 1e-6 and abs(obj.Shape.BoundBox.YMin) < 1e-6
+    obj.Placement.Base = App.Vector(7, 8, 9)
+    obj.OutlineMargin = 7
+    doc.recompute()
+    assert (obj.Placement.Base - App.Vector(7, 8, 9)).Length < 1e-6
+    assert abs(obj.Shape.BoundBox.XMin - 7) < 1e-6
+    assert abs(obj.Shape.BoundBox.YMin - 8) < 1e-6
+    obj.removeProperty('PlacementReference')
+    obj.Proxy.onDocumentRestored(obj)
+    assert str(obj.PlacementReference) == 'Keep layout coordinates'
+    App.closeDocument(doc.Name)
+print('Alignment passed: both outlines, all modes, rigid geometry, preview, persistence, edits and migration')

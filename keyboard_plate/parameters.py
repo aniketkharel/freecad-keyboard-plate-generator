@@ -21,3 +21,5 @@ LENGTH_PARAMETERS = (
 )
 
 OUTLINE_SHAPES = ('Follow layout', 'Rectangle')
+
+PLACEMENT_REFERENCES = ('Keep layout coordinates', 'Center on origin', 'Corner at origin')

@@ -6,6 +6,7 @@ import FreeCAD as App
 import Part
 from FreeCAD import Vector
 from .kle import parse_kle
+from .alignment import alignment_offset
 
 from .parameters import PITCH
 
@@ -120,7 +121,17 @@ def _generate(obj):
     if not result.isValid():
         raise ValueError('Generated BREP is invalid')
 
+    bounds = result.BoundBox
+    dx, dy = alignment_offset(
+        (bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax),
+        str(getattr(obj, 'PlacementReference', 'Keep layout coordinates')))
+    if dx or dy or bounds.ZMin:
+        transform = App.Placement(Vector(dx, dy, -bounds.ZMin), App.Rotation()).toMatrix()
+        result = result.transformGeometry(transform)
+    # Keep manual object Placement independent of the generated local alignment.
+    placement = obj.Placement
     obj.Shape = result
+    obj.Placement = placement
     obj.KeyCount = len(keys)
     obj.VolumeMM3 = result.Volume
     obj.SolidCount = len(result.Solids)

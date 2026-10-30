@@ -14,7 +14,7 @@ except ImportError:
         from PySide import QtCore, QtGui
 from . import __author__, __version__
 from .feature import KeyboardPlateProxy, create_plate
-from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES
+from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES, PLACEMENT_REFERENCES
 from .kle import parse_kle
 from .preview import layout_preview
 
@@ -79,6 +79,15 @@ class PlateDialog(QtWidgets.QDialog):
         self.outline.setCurrentIndex(max(0, self.outline.findText(current_outline)))
         self.outline.setToolTip('Rectangle encloses the expanded layout in an X/Y-aligned boundary.')
         form.addRow('Outline shape', self.outline)
+        self.reference = QtWidgets.QComboBox()
+        self.reference.addItems(list(PLACEMENT_REFERENCES))
+        current_reference = str(getattr(self.target, 'PlacementReference', PLACEMENT_REFERENCES[0]))
+        self.reference.setCurrentIndex(max(0, self.reference.findText(current_reference)))
+        self.reference.setToolTip(
+            'Uses plate bounds in local object coordinates, with the bottom at Z=0. '
+            'Manual object Placement applies separately. Corner means minimum X and Y.'
+        )
+        form.addRow('Placement reference', self.reference)
         self.fields = {}
         for name, label, group, default, description in LENGTH_PARAMETERS:
             field = QtWidgets.QDoubleSpinBox()
@@ -91,6 +100,7 @@ class PlateDialog(QtWidgets.QDialog):
         for name in ('OutlineMargin', 'SwitchOpening', 'PlateThickness'):
             self.fields[name].valueChanged.connect(self.update_preview)
         self.outline.currentIndexChanged.connect(self.update_preview)
+        self.reference.currentIndexChanged.connect(self.update_preview)
         self.update_preview()
         self.relief = QtWidgets.QCheckBox('Enable underside clip relief')
         self.relief.setToolTip(
@@ -111,7 +121,7 @@ class PlateDialog(QtWidgets.QDialog):
             keys = parse_kle(self.data)
             envelopes, holes, bounds = layout_preview(
                 keys, self.fields['OutlineMargin'].value(),
-                self.fields['SwitchOpening'].value(), self.outline.currentText())
+                self.fields['SwitchOpening'].value(), self.outline.currentText(), self.reference.currentText())
             # Filled polygons overlap to show the same envelope union as generation.
             for polygons, color in ((envelopes, '#a9c7dc'), (holes, '#23313e')):
                 for points in polygons:
@@ -119,8 +129,18 @@ class PlateDialog(QtWidgets.QDialog):
                     pen = QtGui.QPen(QtGui.QColor(color))
                     pen.setWidthF(0)
                     self.preview_scene.addPolygon(polygon, pen, QtGui.QBrush(QtGui.QColor(color)))
+            origin_pen = QtGui.QPen(QtGui.QColor('#cf4242'))
+            origin_pen.setWidthF(0)
+            self.preview_scene.addLine(-2, 0, 2, 0, origin_pen)
+            self.preview_scene.addLine(0, -2, 0, 2, origin_pen)
+            origin_label = self.preview_scene.addSimpleText('0,0')
+            origin_label.setBrush(QtGui.QBrush(QtGui.QColor('#cf4242')))
+            origin_label.setScale(0.3)
+            origin_label.setPos(2, 1)
             left, top, right, bottom = bounds
-            self.preview_scene.setSceneRect(left - 3, top - 3, right - left + 6, bottom - top + 6)
+            view_left, view_top = min(left, -3), min(top, -3)
+            view_right, view_bottom = max(right, 10), max(bottom, 6)
+            self.preview_scene.setSceneRect(view_left - 3, view_top - 3, view_right - view_left + 6, view_bottom - view_top + 6)
             self.preview_view.fitInView(self.preview_scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
             self.dimensions.setText(
                 '%d switches · Plate: %.2f × %.2f × %.2f mm (X × Y × thickness)'
@@ -160,6 +180,7 @@ class PlateDialog(QtWidgets.QDialog):
             # Attach the proxy first to migrate older features inside the transaction.
             KeyboardPlateProxy(obj)
             obj.OutlineShape = self.outline.currentText()
+            obj.PlacementReference = self.reference.currentText()
             obj.KLEData = self.data
             for name, field in self.fields.items():
                 setattr(obj, name, field.value())

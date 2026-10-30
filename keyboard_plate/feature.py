@@ -5,13 +5,14 @@ import traceback
 import FreeCAD as App
 from .geometry import _generate
 from .kle import parse_kle
-from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES
+from .parameters import LENGTH_PARAMETERS, UNDERSIDE_CLIP_RELIEF, OUTLINE_SHAPES, PLACEMENT_REFERENCES
 
 
 class KeyboardPlateProxy:
     def __init__(self, obj):
         obj.Proxy = self
         ensure_outline_property(obj)
+        ensure_placement_property(obj)
 
     def execute(self, obj):
         try:
@@ -24,6 +25,7 @@ class KeyboardPlateProxy:
     def onDocumentRestored(self, obj):
         obj.Proxy = self
         ensure_outline_property(obj)
+        ensure_placement_property(obj)
 
 
 def ensure_outline_property(obj):
@@ -33,6 +35,15 @@ def ensure_outline_property(obj):
                         'Follow key envelopes or enclose them in an X/Y-aligned rectangle')
         obj.OutlineShape = list(OUTLINE_SHAPES)
         obj.OutlineShape = OUTLINE_SHAPES[0]
+
+
+def ensure_placement_property(obj):
+    """Keep legacy features in their original coordinates."""
+    if 'PlacementReference' not in obj.PropertiesList:
+        obj.addProperty('App::PropertyEnumeration', 'PlacementReference', '02 Plate',
+                        'Align outer bounds in local object coordinates; bottom face is Z=0')
+        obj.PlacementReference = list(PLACEMENT_REFERENCES)
+        obj.PlacementReference = PLACEMENT_REFERENCES[0]
 
 
 def _add_props(obj, data):

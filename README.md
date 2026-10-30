@@ -1,4 +1,4 @@
-# Keyboard Plate Generator v0.1.0-beta.2
+# Keyboard Plate Generator v0.1.0-beta.3
 
 **By [Aniket Kharel](https://github.com/aniketkharel/) · eco-ergo.com · MIT License**
 
@@ -50,6 +50,18 @@ Run `plate_generator.FCMacro` from FreeCAD's Macros dialog. When upgrading, repl
 5. Save the document as FCStd. Select the plate and use FreeCAD's Export command for STL or STEP.
 
 The package must be importable when FreeCAD restores a saved parametric object. In a new FreeCAD session, run the launcher before opening your FCStd document. If the document was already open without its proxy restored, select the plate and run the launcher to reattach its proxy through regeneration. Keep the installed package available; the FCStd embeds the layout and generated shape, not this Python package.
+
+## Placement reference
+
+Choose **Placement reference** in the dialog or edit `PlacementReference` in the object's Data properties:
+
+- **Keep layout coordinates** preserves the imported coordinates (default, including older documents).
+- **Center on origin** centers the plate's outer bounding box at X=0, Y=0.
+- **Corner at origin** puts the minimum-X/minimum-Y bounding-box corner at X=0, Y=0.
+
+The bottom face stays at local Z=0. On stepped or rotated outlines, the bounding-box corner may lie outside the material. Alignment is recalculated on regeneration, and the preview's red cross marks the local origin. The switch openings and clip reliefs move together without changing their geometry.
+
+These references use the object's local coordinates. A manually edited FreeCAD `Placement` or parent assembly transform still applies separately; use an identity Placement to align with the document's global origin. Existing manual Placement is preserved.
 
 ## Proven mechanical defaults
 

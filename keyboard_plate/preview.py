@@ -4,6 +4,7 @@
 import math
 
 from .parameters import PITCH
+from .alignment import alignment_offset
 
 
 def rectangle(key, width=None, height=None, margin=0.0):
@@ -21,7 +22,8 @@ def rectangle(key, width=None, height=None, margin=0.0):
     return points
 
 
-def layout_preview(keys, margin, opening, outline_shape='Follow layout'):
+def layout_preview(keys, margin, opening, outline_shape='Follow layout',
+                   placement_reference='Keep layout coordinates'):
     envelopes = [rectangle(key, margin=margin) for key in keys]
     holes = [rectangle(key, opening, opening) for key in keys]
     points = [point for polygon in envelopes for point in polygon]
@@ -32,4 +34,10 @@ def layout_preview(keys, margin, opening, outline_shape='Follow layout'):
         envelopes = [[(left, top), (right, top), (right, bottom), (left, bottom)]]
     elif outline_shape != 'Follow layout':
         raise ValueError('Unknown outline shape: %s' % outline_shape)
+    left, top, right, bottom = bounds
+    # Preview uses screen-down Y; model bounds use positive-up Y.
+    dx, dy = alignment_offset((left, -bottom, right, -top), placement_reference)
+    envelopes = [[(x + dx, y - dy) for x, y in polygon] for polygon in envelopes]
+    holes = [[(x + dx, y - dy) for x, y in polygon] for polygon in holes]
+    bounds = (left + dx, top - dy, right + dx, bottom - dy)
     return envelopes, holes, bounds
