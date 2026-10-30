@@ -1,0 +1,18 @@
+# Copyright (c) 2026 eco-ergo.com
+# SPDX-License-Identifier: MIT
+# -*- coding: utf-8 -*-
+"""Keep this launcher beside the keyboard_plate package."""
+import os
+import sys
+import FreeCADGui as Gui
+
+# Resolve the package beside the saved macro file.
+_macro_path = globals().get('__file__')
+if not _macro_path:
+    raise RuntimeError('Open and execute plate_generator.FCMacro from its saved file')
+_module_path = os.path.dirname(os.path.abspath(_macro_path))
+if _module_path not in sys.path:
+    sys.path.insert(0, _module_path)
+from keyboard_plate.gui import run
+run()
+

@@ -1,0 +1,295 @@
+# -*- coding: utf-8 -*-
+"""Keyboard Plate Generator v0.2 - FreeCAD 0.21/1.x GUI macro.
+
+Copyright 2026. Released under MIT License.
+Creates a single editable FeaturePython with parameters and KLE raw JSON embedded.
+No Sketcher constraints or DXF imports are required.
+"""
+import json
+import math
+import os
+import traceback
+import FreeCAD as App
+import Part
+from FreeCAD import Vector
+
+PITCH = 19.05  # mm per KLE unit
+
+
+def _parse_kle(source):
+    """Return physical keys as (x,y,width,height,rotation_deg,rot_x,rot_y,label).
+
+    KLE row coordinates: each new row resets x to 0, advances y by 1.
+    x/y property modifiers shift the next key's cursor. w/h are one-key defaults.
+    The rotation origin (rx, ry) and angle (r) persist within KLE clusters.
+    """
+    source = source.lstrip('\ufeff').strip().rstrip(';').strip()
+    if not source:
+        raise ValueError('KLE data is empty')
+    try:
+        data = json.loads(source)
+    except json.JSONDecodeError:
+        data = json.loads('[' + source.rstrip(',') + ']')
+    if not isinstance(data, list):
+        raise ValueError('Expected KLE rows (an array of arrays)')
+    keys = []
+    cursor_y = -1.0
+    angle = 0.0
+    rx = 0.0
+    ry = 0.0
+    for row in data:
+        if isinstance(row, dict):
+            continue  # KLE keyboard metadata
+        if not isinstance(row, list):
+            raise ValueError('Each KLE row must be an array')
+        cursor_x = 0.0
+        cursor_y += 1.0
+        width, height, decal = 1.0, 1.0, False
+        for element in row:
+            if isinstance(element, dict):
+                # Rotation-cluster origin in KLE is absolute in keyboard units.
+                if 'rx' in element:
+                    rx = float(element['rx'])
+                    cursor_x = rx
+                if 'ry' in element:
+                    ry = float(element['ry'])
+                    cursor_y = ry
+                if 'r' in element:
+                    angle = float(element['r'])
+                cursor_x += float(element.get('x', 0.0))
+                cursor_y += float(element.get('y', 0.0))
+                width = float(element.get('w', 1.0))
+                height = float(element.get('h', 1.0))
+                decal = bool(element.get('d', False))
+            elif isinstance(element, str):
+                if not decal:
+                    if width <= 0 or height <= 0:
+                        raise ValueError('Key width and height must be positive')
+                    keys.append((cursor_x, cursor_y, width, height,
+                                 angle, rx, ry, element.split('\n')[0]))
+                cursor_x += width
+                width, height, decal = 1.0, 1.0, False
+            else:
+                raise ValueError('Unexpected KLE element: ' + str(element)[:80])
+    if not keys:
+        raise ValueError('No physical keys found in KLE data')
+    return keys
+
+
+def _pt(x, y, angle, rx, ry):
+    """Convert KLE top-down (y positive down) to FreeCAD XY (y positive up)."""
+    a = math.radians(angle)
+    dx, dy = x - rx, y - ry
+    x1 = rx + dx * math.cos(a) - dy * math.sin(a)
+    y1 = ry + dx * math.sin(a) + dy * math.cos(a)
+    return Vector(x1 * PITCH, -y1 * PITCH, 0)
+
+
+def _key_polygon(key, margin):
+    x, y, w, h, a, rx, ry, _ = key
+    raw = [(x-margin/PITCH, y-margin/PITCH),
+           (x+w+margin/PITCH, y-margin/PITCH),
+           (x+w+margin/PITCH, y+h+margin/PITCH),
+           (x-margin/PITCH, y+h+margin/PITCH)]
+    vertices = [_pt(px, py, a, rx, ry) for px, py in raw]
+    vertices.append(vertices[0])
+    return Part.Face(Part.makePolygon(vertices))
+
+
+def _rotated_box(cx, cy, length_x, length_y, z_start, depth, key):
+    # Center and axes are defined in the key's unrotated coordinates.
+    x, y, w, h, a, rx, ry, _ = key
+    mid = _pt(cx, cy, a, rx, ry)
+    solid = Part.makeBox(length_x, length_y, depth,
+                         Vector(mid.x-length_x/2, mid.y-length_y/2, z_start))
+    # Positive KLE screen rotation corresponds to negative FreeCAD Z rotation.
+    # Box was centred on the already rotated target. Rotate its local orientation.
+    solid.rotate(Vector(mid.x, mid.y, 0), Vector(0, 0, 1), -a)
+    return solid
+
+
+def _refine(shape):
+    """Remove coincident coplanar seams after Boolean operations.
+
+    It is safe to fall back to the unrefined shape if the OCC kernel cannot
+    simplify a particular edge configuration.
+    """
+    try:
+        cleaned = shape.removeSplitter()
+        if not cleaned.isNull() and cleaned.Volume > 0:
+            return cleaned
+    except Exception as exc:
+        App.Console.PrintWarning('[Keyboard Plate] Refinement skipped: %s\n' % exc)
+    return shape
+
+
+def _generate(obj):
+    """Create a single solid; preserve the physical geometry tested in v0.1.2.
+
+    Positive Z is the top of the plate. The underside relief starts at z=0,
+    rises to (thickness - lip), and does NOT widen the top 1.5 mm aperture.
+    """
+    keys = _parse_kle(obj.KLEData)
+    t = float(obj.PlateThickness.Value)
+    margin = float(obj.OutlineMargin.Value)
+    opening = float(obj.SwitchOpening.Value)
+    lip = float(obj.ClipLipThickness.Value)
+    relief = float(obj.ClipReliefWidth.Value)
+    clip_span = float(obj.ClipReliefSpan.Value)
+    if not (t > 0 and margin >= 0 and 10 <= opening <= 17):
+        raise ValueError('Thickness/margin/opening values outside accepted limits')
+    if obj.UndersideClipRelief and not (0 < lip < t):
+        raise ValueError('Clip lip must be greater than 0 and less than plate thickness')
+    if relief <= 0 or clip_span <= 0:
+        raise ValueError('Clip relief dimensions must be positive')
+
+    # Envelopes are identical to the successful four-switch print.
+    faces = [_key_polygon(key, margin) for key in keys]
+    envelope = faces[0].multiFuse(faces[1:]) if len(faces) > 1 else faces[0]
+    envelope = _refine(envelope)
+    base = envelope.extrude(Vector(0, 0, t))
+
+    cutters = []
+    for key in keys:
+        x, y, w, h, angle, rx, ry, label = key
+        cx, cy = x + w / 2.0, y + h / 2.0
+        # Full-depth standard MX aperture, nominal 14 x 14 mm.
+        cutters.append(_rotated_box(cx, cy, opening, opening,
+                                    -0.2, t + 0.4, key))
+        if obj.UndersideClipRelief:
+            # Keep SAME +/-Y clip-side geometry as the proven plate.
+            # The extensions start where the through-hole ends.
+            step = opening / 2.0 + relief / 2.0
+            for sign in (-1, 1):
+                cutters.append(_rotated_box(cx, cy + sign * step / PITCH,
+                                            clip_span, relief, -0.1,
+                                            t - lip + 0.1, key))
+    tool = Part.makeCompound(cutters)
+    result = _refine(base.cut(tool))
+    if result.isNull() or result.Volume <= 0:
+        raise ValueError('Boolean operation produced an empty plate')
+    if len(result.Solids) != 1:
+        raise ValueError('Expected one connected plate, got %d solids. Increase margin.' % len(result.Solids))
+    if not result.isValid():
+        raise ValueError('Generated BREP is invalid')
+
+    obj.Shape = result
+    obj.KeyCount = len(keys)
+    obj.VolumeMM3 = result.Volume
+    obj.SolidCount = len(result.Solids)
+    obj.GenerationStatus = 'OK - %d keys, %d solid' % (len(keys), len(result.Solids))
+
+
+class KeyboardPlateProxy:
+    def __init__(self, obj):
+        obj.Proxy = self
+
+    def execute(self, obj):
+        try:
+            _generate(obj)
+        except Exception as e:
+            obj.GenerationStatus = 'ERROR: ' + str(e)
+            App.Console.PrintError('[Keyboard Plate] ' + traceback.format_exc() + '\n')
+            # Preserve last valid shape if a property becomes temporarily invalid.
+
+    def onDocumentRestored(self, obj):
+        obj.Proxy = self
+
+
+def _add_props(obj, data):
+    def length(name, group, value, description):
+        obj.addProperty('App::PropertyLength', name, group, description)
+        setattr(obj, name, value)
+    obj.addProperty('App::PropertyString', 'KLEData', '01 Layout',
+                    'KLE Raw Data or Download JSON contents. Edit to regenerate.')
+    obj.KLEData = data
+    length('PlateThickness', '02 Plate', 3.0, 'Total structural plate thickness in mm')
+    length('OutlineMargin', '02 Plate', 5.0, 'Margin outside nominal 1U key footprints in mm')
+    length('SwitchOpening', '03 Cherry MX', 14.0,
+           'Nominal square through-hole (adjust for printer tolerance)')
+    obj.addProperty('App::PropertyBool', 'UndersideClipRelief', '03 Cherry MX',
+                    'Create underside clearance at the two MX clip sides')
+    obj.UndersideClipRelief = True
+    length('ClipLipThickness', '03 Cherry MX', 1.5,
+           'Material retained at the upper face above relief pockets')
+    length('ClipReliefWidth', '03 Cherry MX', 1.0,
+           'Extra width outward from the two clip-side edges')
+    length('ClipReliefSpan', '03 Cherry MX', 9.0,
+           'Relief strip width across each clip side')
+    obj.addProperty('App::PropertyInteger', 'KeyCount', '04 Result', 'Generated key count')
+    obj.addProperty('App::PropertyString', 'GenerationStatus', '04 Result', 'Last generation status')
+    obj.addProperty('App::PropertyFloat', 'VolumeMM3', '04 Result', 'Generated volume in mm^3')
+    obj.addProperty('App::PropertyInteger', 'SolidCount', '04 Result', 'Connected solids in generated geometry')
+    for name in ('KeyCount', 'GenerationStatus', 'VolumeMM3', 'SolidCount'):
+        obj.setEditorMode(name, 1)
+
+
+def _ask_kle_file():
+    try:
+        from PySide2 import QtWidgets as Widgets
+    except ImportError:
+        from PySide import QtGui as Widgets
+    selection = Widgets.QFileDialog.getOpenFileName(
+        None, 'Select KLE raw data or Download JSON', '',
+        'KLE layout (*.json *.txt);;All files (*)')
+    path = selection[0] if isinstance(selection, tuple) else selection
+    return path
+
+
+def run():
+    try:
+        path = _ask_kle_file()
+        if not path:
+            App.Console.PrintMessage('[Keyboard Plate] Import cancelled.\n')
+            return
+        with open(path, 'r', encoding='utf-8-sig') as f:
+            kle_data = f.read()
+        keys = _parse_kle(kle_data)  # validate before making objects
+        doc = App.ActiveDocument or App.newDocument('KeyboardPlate')
+        # Reattach proxies for any previously saved generators, if needed.
+        for existing in doc.Objects:
+            if ('KLEData' in existing.PropertiesList and
+                    'PlateThickness' in existing.PropertiesList and
+                    (existing.Proxy is None or not hasattr(existing.Proxy, 'execute'))):
+                KeyboardPlateProxy(existing)
+        obj = doc.addObject('Part::FeaturePython', 'KeyboardPlate')
+        obj.Label = 'MX Keyboard Plate (%d keys)' % len(keys)
+        _add_props(obj, kle_data)
+        KeyboardPlateProxy(obj)
+        # Critical: register native Part view provider for FeaturePython.
+        # Without this the object may hold a valid Shape yet render nothing.
+        obj.ViewObject.Proxy = 0
+        doc.recompute()
+        if obj.GenerationStatus.startswith('ERROR'):
+            raise RuntimeError(obj.GenerationStatus)
+        if obj.Shape.isNull():
+            raise RuntimeError('Plate generation failed. Check Report view.')
+        if obj.Shape.Volume <= 0 or obj.Shape.BoundBox.DiagonalLength <= 0:
+            raise RuntimeError('Generated shape is empty; inspect FreeCAD Report View')
+        obj.ViewObject.Visibility = True
+        obj.ViewObject.ShapeColor = (0.68, 0.78, 0.86)
+        obj.ViewObject.LineColor = (0.12, 0.20, 0.26)
+        # Do not force DisplayMode: FeaturePython's available modes vary
+        # across FreeCAD releases and ViewProvider implementations.
+        # FreeCAD's default mode works without this version-sensitive call.
+        Gui.activeDocument().activeView().viewAxonometric()
+        Gui.activeDocument().activeView().fitAll()
+        Gui.Selection.clearSelection()
+        # Leave viewport unobstructed and make the plate easy to inspect.
+        bounds = obj.Shape.BoundBox
+        App.Console.PrintMessage('[Keyboard Plate] Visible=%s, Volume=%.1f mm3, Bounds=%.1f x %.1f x %.1f mm\n' % (
+            str(obj.ViewObject.Visibility), obj.Shape.Volume, bounds.XLength, bounds.YLength, bounds.ZLength))
+        App.Console.PrintMessage('[Keyboard Plate] Created %d-key plate. Edit Data properties then recompute.\n' % len(keys))
+    except Exception as e:
+        App.Console.PrintError('[Keyboard Plate] ' + traceback.format_exc() + '\n')
+        try:
+            try:
+                from PySide2 import QtWidgets as Widgets
+            except ImportError:
+                from PySide import QtGui as Widgets
+            Widgets.QMessageBox.critical(None, 'Keyboard Plate Generator', str(e))
+        except Exception:
+            pass
+
+
+run()

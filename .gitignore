@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+validation_output/
+dist/
+*.FCStd1
+*.FCBak
